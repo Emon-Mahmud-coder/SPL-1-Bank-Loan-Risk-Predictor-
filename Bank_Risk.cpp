@@ -188,6 +188,191 @@ int encodeYesNo(const string& value) {
     return 0;
 }
 
+// data Loading Preprocessing
+
+vector <LoanRecord> loadAndPreprocessDataset( string& filename )
+{
+
+vector<LoanRecord> dataset;
+
+ifstream file (filename);
+
+if(!file.is_open())
+{
+    cerr << "Error: Could not open file" << endl;
+    return dataset;
+}
+
+string line;
+bool isFirstLine = true;
+int lineCount = 0;
+int loadedCount = 0;
+int invalidCount = 0;
+
+cout << "Loading Dataset from" << filename << "..." ;
+cout << endl;
+
+cout << "This may take a moment for large dataset...";
+cout << endl;
+
+auto startTime = chrono::high_resolution_clock::now();
+
+while(getline(file , line))
+{
+
+    lineCount++;
+
+    //Skip First Line 
+    if(isFirstLine){
+        
+        continue;
+        isFirstLine = true;
+    }
+     
+    //Skip Empty Line;
+
+    if(line.empty()){
+        continue;
+    }
+
+    vector<string> tokens = splitCSV(line);
+
+    //Ensure We Have enough columns
+   if(line.size() < 18){
+    invalidCount++;
+    continue;
+   }
+
+  LoanRecord record;
+  //Parse and Convert each field
+
+  record.age = safeStoi(tokens[1] , 30);
+  record.income = safeStod(tokens[2] , 50000.0);
+  record.loanAmount = safeStoi(tokens[3] ,10000 );
+  record.creditScore = safeStoi(tokens[4] , 650);
+  record.monthsEmployed = safeStoi(tokens[5], 12);
+  record.numCreditLines = safeStoi(tokens[6] , 2);
+  record.interestRate = safeStoi(tokens[7] , 5.0 );
+  record.loanTerm = safeStoi(tokens[8], 36);
+  record.dtiRatio = safeStod(tokens[9], 0.3);
+  record.education = encodeEducation(tokens[10]);
+  record.employmentType = encodeEmploymentType(tokens[11]);
+  record.maritalStatus = encodeMaritalStatus(tokens[12]);
+  record.hasMortgage = encodeYesNo(tokens[13]);
+  record.hasDependents = encodeYesNo(tokens[14]);
+  record.loanPurpose = encodeLoanPurpose(tokens[15]);
+  record.hasCoSigner = encodeYesNo(tokens[16]);
+
+   //  Default (0 = Low Risk, 1 = High Risk)
+  record.defaultRisk = encodeYesNo(tokens[17]);
+   
+  //Validate input Data
+
+  validateInputData(record);
+
+  dataset.push_back(record);
+  loadedCount++;
+
+  //Progress indicator for large file;
+
+   if (loadedCount % 50000 == 0) {
+            cout << "  Loaded " << loadedCount << " records..." << endl;
+        }
+
+
+}
+
+file.close();
+
+auto endtime = chrono::high_resolution_clock::now();
+auto duration = chrono::duration_cast<chrono::seconds>(endtime-startTime);
+
+//Short message for user
+
+    cout << "\nDataset loading completed!" << endl;
+    cout << "  Total lines processed: " << lineCount << endl;
+    cout << "  Valid records loaded: " << dataset.size() << endl;
+    cout << "  Invalid records skipped: " << invalidCount << endl;
+    cout << "  Loading time: " << duration.count() << " seconds" << endl;
+ 
+
+//CAlculate statistics for numerical fellings;
+
+ cout << "\nComputing feature statistics..." << endl;
+
+calculateFeaturesStatistics(dataset);
+
+return dataset;
+
+}
+
+//Data Validation
+void validateInputData(LoanRecord& record)
+{
+
+    if(record.age < 18) {
+
+        record.age = 18;
+    }
+
+    if(record.age > 80){
+        record.age = 80;
+    }
+
+    if(record.income < 0){
+        record.income = 0;
+    }
+
+    if(record.income > 5000000){
+        record.income = 5000000;
+    }
+
+    if(record.creditScore < 300)
+    {
+        record.creditScore = 300;
+    }
+    
+    if(record.creditScore > 850)
+    {
+        record.creditScore = 850;
+    }
+
+    if(record.dtiRatio < 0.0)
+    {
+        record.dtiRatio = 0.0;
+    }
+
+    if(record.dtiRatio > 1.0)
+    {
+        record.dtiRatio = 1.0;
+    }
+
+    if (record.interestRate < 0.0) record.interestRate = 0.0;
+    if (record.interestRate > 30.0) record.interestRate = 30.0;
+    
+    if (record.monthsEmployed < 0) record.monthsEmployed = 0;
+    if (record.monthsEmployed > 600) record.monthsEmployed = 600;
+    
+
+
+}
+
+
+//Function to calculate data Statistics
+void calculateFeaturesStatistics(vector<LoanRecord>&dataset)
+{
+    int num_features = 16;
+
+    if(dataset.empty()) return;
+
+     vector<vector<double>> featureValues(num_features);
+
+//Not completed yet,, will start work from here
+
+    
+    
+}
+
 
 
 
@@ -206,7 +391,14 @@ int main(){
     //Step-01: Data Preprocessing
 
     string datasetFile = "data.csv";
+    
+    vector<LoanRecord> dataset = loadAndPreprocessDataset(datasetFile);
 
+    if(dataset.empty())
+    {
+       cerr << "\nError: No data loaded. Please ensure " << datasetFile << " exists." << endl;
+        return 1;
+    }
 
 }
 
