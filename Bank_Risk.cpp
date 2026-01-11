@@ -16,7 +16,7 @@
 using namespace std;
 
 
-// DATA STRUCTURES
+// Data structures
 
 
 struct LoanRecord {
@@ -74,7 +74,6 @@ const vector<string> FEATURE_NAMES = {
     "Has Mortgage", "Has Dependents", "Loan Purpose", "Has Co-Signer"
 };
 
-
 // Split a CSV line into tokens
 vector<string> splitCSV(const string& line) {
     vector<string> tokens;
@@ -93,6 +92,7 @@ vector<string> splitCSV(const string& line) {
 
 // Safe string to int conversion
 int safeStoi(const string& str, int defaultValue = 0) {
+    // Remove the line that sets defaultValue = 0
     try {
         if (str.empty()) return defaultValue;
         return stoi(str);
@@ -103,6 +103,7 @@ int safeStoi(const string& str, int defaultValue = 0) {
 
 // Safe string to double conversion
 double safeStod(const string& str, double defaultValue = 0.0) {
+    
     try {
         if (str.empty()) return defaultValue;
         return stod(str);
@@ -122,7 +123,7 @@ int encodeEducation(const string& value) {
 }
 
 // Decode education code to name
-
+// will use it when show output/report
 string getEducationName(int code) {
     switch(code) {
         case 0: return "High School";
@@ -188,124 +189,6 @@ int encodeYesNo(const string& value) {
     return 0;
 }
 
-// data Loading Preprocessing
-
-vector <LoanRecord> loadAndPreprocessDataset( string& filename )
-{
-
-vector<LoanRecord> dataset;
-
-ifstream file (filename);
-
-if(!file.is_open())
-{
-    cerr << "Error: Could not open file" << endl;
-    return dataset;
-}
-
-string line;
-bool isFirstLine = true;
-int lineCount = 0;
-int loadedCount = 0;
-int invalidCount = 0;
-
-cout << "Loading Dataset from" << filename << "..." ;
-cout << endl;
-
-cout << "This may take a moment for large dataset...";
-cout << endl;
-
-auto startTime = chrono::high_resolution_clock::now();
-
-while(getline(file , line))
-{
-
-    lineCount++;
-
-    //Skip First Line 
-    if(isFirstLine){
-        
-        continue;
-        isFirstLine = true;
-    }
-     
-    //Skip Empty Line;
-
-    if(line.empty()){
-        continue;
-    }
-
-    vector<string> tokens = splitCSV(line);
-
-    //Ensure We Have enough columns
-   if(line.size() < 18){
-    invalidCount++;
-    continue;
-   }
-
-  LoanRecord record;
-  //Parse and Convert each field
-
-  record.age = safeStoi(tokens[1] , 30);
-  record.income = safeStod(tokens[2] , 50000.0);
-  record.loanAmount = safeStoi(tokens[3] ,10000 );
-  record.creditScore = safeStoi(tokens[4] , 650);
-  record.monthsEmployed = safeStoi(tokens[5], 12);
-  record.numCreditLines = safeStoi(tokens[6] , 2);
-  record.interestRate = safeStoi(tokens[7] , 5.0 );
-  record.loanTerm = safeStoi(tokens[8], 36);
-  record.dtiRatio = safeStod(tokens[9], 0.3);
-  record.education = encodeEducation(tokens[10]);
-  record.employmentType = encodeEmploymentType(tokens[11]);
-  record.maritalStatus = encodeMaritalStatus(tokens[12]);
-  record.hasMortgage = encodeYesNo(tokens[13]);
-  record.hasDependents = encodeYesNo(tokens[14]);
-  record.loanPurpose = encodeLoanPurpose(tokens[15]);
-  record.hasCoSigner = encodeYesNo(tokens[16]);
-
-   //  Default (0 = Low Risk, 1 = High Risk)
-  record.defaultRisk = encodeYesNo(tokens[17]);
-   
-  //Validate input Data
-
-  validateInputData(record);
-
-  dataset.push_back(record);
-  loadedCount++;
-
-  //Progress indicator for large file;
-
-   if (loadedCount % 50000 == 0) {
-            cout << "  Loaded " << loadedCount << " records..." << endl;
-        }
-
-
-}
-
-file.close();
-
-auto endtime = chrono::high_resolution_clock::now();
-auto duration = chrono::duration_cast<chrono::seconds>(endtime-startTime);
-
-//Short message for user
-
-    cout << "\nDataset loading completed!" << endl;
-    cout << "  Total lines processed: " << lineCount << endl;
-    cout << "  Valid records loaded: " << dataset.size() << endl;
-    cout << "  Invalid records skipped: " << invalidCount << endl;
-    cout << "  Loading time: " << duration.count() << " seconds" << endl;
- 
-
-//CAlculate statistics for numerical fellings;
-
- cout << "\nComputing feature statistics..." << endl;
-
-calculateFeaturesStatistics(dataset);
-
-return dataset;
-
-}
-
 //Data Validation
 void validateInputData(LoanRecord& record)
 {
@@ -357,23 +240,122 @@ void validateInputData(LoanRecord& record)
 
 }
 
+// data Loading Preprocessing
 
-//Function to calculate data Statistics
-void calculateFeaturesStatistics(vector<LoanRecord>&dataset)
+vector <LoanRecord> loadAndPreprocessDataset( string& filename )
 {
-    int num_features = 16;
 
-    if(dataset.empty()) return;
+vector<LoanRecord> dataset;
 
-     vector<vector<double>> featureValues(num_features);
+ifstream file (filename);
 
-//Not completed yet,, will start work from here
-
-    
-    
+if(!file.is_open())
+{
+    cerr << "Error: Could not open file" << endl;
+    return dataset;
 }
 
+string line;
+bool isFirstLine = true;
+int lineCount = 0;
+int loadedCount = 0;
+int invalidCount = 0;
 
+cout << "Loading Dataset from" << filename << "..." ;
+cout << endl;
+
+cout << "This may take a moment for large dataset...";
+cout << endl;
+
+auto startTime = chrono::high_resolution_clock::now();
+
+while(getline(file , line))
+{
+
+    lineCount++;
+
+    //Skip First Line 
+    if(isFirstLine){
+        
+        isFirstLine = false;
+        continue;
+    }
+     
+    //Skip Empty Line;
+
+    if(line.empty()){
+        continue;
+    }
+
+    vector<string> tokens = splitCSV(line);
+
+    //Ensure We Have enough columns
+   if(tokens.size() < 18){
+    invalidCount++;
+    continue;
+   }
+
+  LoanRecord record;
+  //Parse and Convert each field
+
+  record.age = safeStoi(tokens[1] , 30);
+  record.income = safeStod(tokens[2] , 50000.0);
+  record.loanAmount = safeStoi(tokens[3] ,10000 );
+  record.creditScore = safeStoi(tokens[4] , 650);
+  record.monthsEmployed = safeStoi(tokens[5], 12);
+  record.numCreditLines = safeStoi(tokens[6] , 2);
+  record.interestRate = safeStod(tokens[7] , 5.0 );
+  record.loanTerm = safeStoi(tokens[8], 36);
+  record.dtiRatio = safeStod(tokens[9], 0.3);
+  record.education = encodeEducation(tokens[10]);
+  record.employmentType = encodeEmploymentType(tokens[11]);
+  record.maritalStatus = encodeMaritalStatus(tokens[12]);
+  record.hasMortgage = encodeYesNo(tokens[13]);
+  record.hasDependents = encodeYesNo(tokens[14]);
+  record.loanPurpose = encodeLoanPurpose(tokens[15]);
+  record.hasCoSigner = encodeYesNo(tokens[16]);
+
+   //  Default (0 = Low Risk, 1 = High Risk)
+  record.defaultRisk = encodeYesNo(tokens[17]);
+   
+  //Validate input Data
+
+  validateInputData(record);
+
+  dataset.push_back(record);
+  loadedCount++;
+
+  //Progress indicator for large file;
+
+   if (loadedCount % 50000 == 0) {
+            cout << "  Loaded " << loadedCount << " records..." << endl;
+        }
+
+
+}
+
+file.close();
+
+auto endtime = chrono::high_resolution_clock::now();
+auto duration = chrono::duration_cast<chrono::seconds>(endtime-startTime);
+
+//Short message for user
+
+    cout << "\nDataset loading completed!" << endl;
+    cout << "  Total lines processed: " << lineCount << endl;
+    cout << "  Valid records loaded: " << dataset.size() << endl;
+    cout << "  Invalid records skipped: " << invalidCount << endl;
+    cout << "  Loading time: " << duration.count() << " seconds" << endl;
+ 
+
+//CAlculate statistics for numerical fellings;
+// calculateFeaturesStatistics();
+
+return dataset;
+
+}
+
+//Function to calculate data Statistics will be implemented from here
 
 
 int main(){
@@ -400,7 +382,6 @@ int main(){
         return 1;
     }
 
+    cout << "Data preprocessing completed Successfully"<<endl;
+    cout << "Data is ready for model training" << endl;
 }
-
-
-
