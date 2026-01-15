@@ -15,10 +15,6 @@
 
 using namespace std;
 
-
-// Data structures
-
-
 struct LoanRecord {
     int age;
     double income;
@@ -29,23 +25,25 @@ struct LoanRecord {
     double interestRate;
     int loanTerm;
     double dtiRatio;
-    int education;           
-    int employmentType;      
-    int maritalStatus;       
-    int hasMortgage;         
-    int hasDependents;       
-    int loanPurpose;         
-    int hasCoSigner;         
-    int defaultRisk;         
+    int education;           // encoded: 0=High School, 1=Bachelor, 2=Master, 3=PhD
+    int employmentType;      // encoded: 0=Unemployed, 1=Self-employed, 2=Full-time, 3=Part-time
+    int maritalStatus;       // encoded: 0=Single, 1=Married, 2=Divorced
+    int hasMortgage;         // 0 or 1
+    int hasDependents;       // 0 or 1
+    int loanPurpose;         // encoded: 0=Auto, 1=Business, 2=Education, 3=Home, 4=Other
+    int hasCoSigner;         // 0 or 1
+    int defaultRisk;         // Target: 0=Low Risk, 1=High Risk
 };
+
+ int NUM_FEATURES = 16;
 
 struct DecisionNode {
     bool isLeaf;
-    int predictedClass;      
-    int featureIndex;        
-    double threshold;        
-    int leftChild;           
-    int rightChild;          
+    int predictedClass;      // For leaf nodes: 0=Low Risk, 1=High Risk
+    int featureIndex;        // Which feature to split on
+    double threshold;        // Split threshold
+    int leftChild;           // Index of left child in tree nodes vector
+    int rightChild;          // Index of right child in tree nodes vector
 };
 
 struct DecisionTree {
@@ -58,21 +56,40 @@ struct RandomForest {
     int numTrees;
 };
 
-struct RiskAnalysis {
-    int predictedClass;
-    double confidence;
-    vector<string> riskFactors;
-    vector<string> positiveFactors;
-    string riskLevel;
-    vector<string> recommendations;
+// ============================================================================
+// GLOBAL STATISTICS FOR FEATURE SCALING
+// ============================================================================
+
+struct FeatureStats {
+    double mean;
+    double stddev;
+    double min;
+    double max;
 };
 
+map<int, FeatureStats> featureStats;
+map<int, int> featureUsageCount;  // Track how often each feature is used in splits
+
+// Feature names for reporting
 const vector<string> FEATURE_NAMES = {
     "Age", "Income", "Loan Amount", "Credit Score", 
     "Months Employed", "Credit Lines", "Interest Rate", "Loan Term",
     "DTI Ratio", "Education", "Employment Type", "Marital Status",
     "Has Mortgage", "Has Dependents", "Loan Purpose", "Has Co-Signer"
 };
+
+
+
+
+
+
+// Get current timestamp for logging
+string getCurrentTimestamp() {
+    time_t now = time(0);
+    char buf[80];
+    strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", localtime(&now));
+    return string(buf);
+}
 
 // Split a CSV line into tokens
 vector<string> splitCSV(const string& line) {
@@ -90,30 +107,7 @@ vector<string> splitCSV(const string& line) {
     return tokens;
 }
 
-// Safe string to int conversion
-int safeStoi(const string& str, int defaultValue = 0) {
-    // Remove the line that sets defaultValue = 0
-    try {
-        if (str.empty()) return defaultValue;
-        return stoi(str);
-    } catch (...) {
-        return defaultValue;
-    }
-}
-
-// Safe string to double conversion
-double safeStod(const string& str, double defaultValue = 0.0) {
-    
-    try {
-        if (str.empty()) return defaultValue;
-        return stod(str);
-    } catch (...) {
-        return defaultValue;
-    }
-}
-
 // Encode categorical Education values
-
 int encodeEducation(const string& value) {
     if (value == "High School") return 0;
     if (value == "Bachelor's" || value == "Bachelor") return 1;
@@ -123,7 +117,6 @@ int encodeEducation(const string& value) {
 }
 
 // Decode education code to name
-// will use it when show output/report
 string getEducationName(int code) {
     switch(code) {
         case 0: return "High School";
@@ -143,6 +136,7 @@ int encodeEmploymentType(const string& value) {
     return 2; // default to Full-time
 }
 
+// Decode employment type
 string getEmploymentName(int code) {
     switch(code) {
         case 0: return "Unemployed";
@@ -159,6 +153,16 @@ int encodeMaritalStatus(const string& value) {
     if (value == "Married") return 1;
     if (value == "Divorced") return 2;
     return 0; // default
+}
+
+// Decode marital status
+string getMaritalStatusName(int code) {
+    switch(code) {
+        case 0: return "Single";
+        case 1: return "Married";
+        case 2: return "Divorced";
+        default: return "Unknown";
+    }
 }
 
 // Encode categorical LoanPurpose values
@@ -189,199 +193,414 @@ int encodeYesNo(const string& value) {
     return 0;
 }
 
-//Data Validation
-void validateInputData(LoanRecord& record)
-{
-
-    if(record.age < 18) {
-
-        record.age = 18;
+// Safe string to int conversion
+int safeStoi(const string& str, int defaultValue = 0) {
+    try {
+        if (str.empty()) return defaultValue;
+        return stoi(str);
+    } catch (...) {
+        return defaultValue;
     }
+}
 
-    if(record.age > 80){
-        record.age = 80;
+// Safe string to double conversion
+double safeStod(const string& str, double defaultValue = 0.0) {
+    try {
+        if (str.empty()) return defaultValue;
+        return stod(str);
+    } catch (...) {
+        return defaultValue;
     }
+}
 
-    if(record.income < 0){
-        record.income = 0;
-    }
+// Validate credit score
+bool isValidCreditScore(int score) {
+    return score >= 300 && score <= 850;
+}
 
-    if(record.income > 5000000){
-        record.income = 5000000;
-    }
+// Validate DTI ratio
+bool isValidDTIRatio(double ratio) {
+    return ratio >= 0.0 && ratio <= 1.0;
+}
 
-    if(record.creditScore < 300)
-    {
-        record.creditScore = 300;
-    }
+// Validate age
+bool isValidAge(int age) {
+    return age >= 18 && age <= 80;
+}
+
+// Validate income
+bool isValidIncome(double income) {
+    return income >= 0 && income <= 500000;
+}
+
+
+void validateInputData(LoanRecord& record) {
+   
+    if (record.age < 18) record.age = 18;
+    if (record.age > 80) record.age = 80;
     
-    if(record.creditScore > 850)
-    {
-        record.creditScore = 850;
-    }
-
-    if(record.dtiRatio < 0.0)
-    {
-        record.dtiRatio = 0.0;
-    }
-
-    if(record.dtiRatio > 1.0)
-    {
-        record.dtiRatio = 1.0;
-    }
-
+    if (record.income < 0) record.income = 0;
+    if (record.income > 500000) record.income = 500000;
+    
+    if (record.creditScore < 300) record.creditScore = 300;
+    if (record.creditScore > 850) record.creditScore = 850;
+    
+    if (record.dtiRatio < 0.0) record.dtiRatio = 0.0;
+    if (record.dtiRatio > 1.0) record.dtiRatio = 1.0;
+    
     if (record.interestRate < 0.0) record.interestRate = 0.0;
     if (record.interestRate > 30.0) record.interestRate = 30.0;
     
     if (record.monthsEmployed < 0) record.monthsEmployed = 0;
     if (record.monthsEmployed > 600) record.monthsEmployed = 600;
-    
-
-
 }
 
-// data Loading Preprocessing
+// ============================================================================
+// DATA LOADING AND PREPROCESSING
+// ============================================================================
 
-vector <LoanRecord> loadAndPreprocessDataset( string& filename )
-{
-
-vector<LoanRecord> dataset;
-
-ifstream file (filename);
-
-if(!file.is_open())
-{
-    cerr << "Error: Could not open file" << endl;
+vector<LoanRecord> loadAndPreprocessDataset(const string& filename) {
+    vector<LoanRecord> dataset;
+    ifstream file(filename);
+    
+    if (!file.is_open()) {
+        cerr << "Error: Could not open file " << filename << endl;
+        return dataset;
+    }
+    
+    string line;
+    bool isFirstLine = true;
+    int lineCount = 0;
+    int loadedCount = 0;
+    int invalidCount = 0;
+    
+    cout << "Loading dataset from " << filename << "..." << endl;
+    cout << "This may take a moment for large datasets..." << endl;
+    
+    auto startTime = chrono::high_resolution_clock::now();
+    
+    while (getline(file, line)) {
+        lineCount++;
+        
+        // Skip header row
+        if (isFirstLine) {
+            isFirstLine = false;
+            continue;
+        }
+        
+        // Skip empty lines
+        if (line.empty()) continue;
+        
+        vector<string> tokens = splitCSV(line);
+        
+        // Ensure we have enough columns (at least 18 columns including LoanID)
+        if (tokens.size() < 18) {
+            invalidCount++;
+            continue;
+        }
+        
+        LoanRecord record;
+        
+        // Parse and convert each field
+        // Skip LoanID (tokens[0])
+        record.age = safeStoi(tokens[1], 30);
+        record.income = safeStod(tokens[2], 50000.0);
+        record.loanAmount = safeStoi(tokens[3], 10000);
+        record.creditScore = safeStoi(tokens[4], 650);
+        record.monthsEmployed = safeStoi(tokens[5], 12);
+        record.numCreditLines = safeStoi(tokens[6], 2);
+        record.interestRate = safeStod(tokens[7], 5.0);
+        record.loanTerm = safeStoi(tokens[8], 36);
+        record.dtiRatio = safeStod(tokens[9], 0.3);
+        
+        record.education = encodeEducation(tokens[10]);
+        record.employmentType = encodeEmploymentType(tokens[11]);
+        record.maritalStatus = encodeMaritalStatus(tokens[12]);
+        record.hasMortgage = encodeYesNo(tokens[13]);
+        record.hasDependents = encodeYesNo(tokens[14]);
+        record.loanPurpose = encodeLoanPurpose(tokens[15]);
+        record.hasCoSigner = encodeYesNo(tokens[16]);
+        
+        //  Default (0 = Low Risk, 1 = High Risk)
+        record.defaultRisk = encodeYesNo(tokens[17]);
+        
+        // Validate data
+        validateInputData(record);
+        
+        dataset.push_back(record);
+        loadedCount++;
+        
+        // Progress indicator for large files
+        if (loadedCount % 50000 == 0) {
+            cout << "  Loaded " << loadedCount << " records..." << endl;
+        }
+    }
+    
+    file.close();
+    
+    auto endTime = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<chrono::seconds>(endTime - startTime);
+    
+    cout << "Dataset loading completed!" << endl;
+    cout << "Total lines processed: " << lineCount << endl;
+    cout << "Valid records loaded: " << dataset.size() << endl;
+    cout << "Invalid records skipped: " << invalidCount << endl;
+    cout << "Loading time: " << duration.count() << " seconds" << endl;
+    
+    
+    
+    
     return dataset;
 }
 
-string line;
-bool isFirstLine = true;
-int lineCount = 0;
-int loadedCount = 0;
-int invalidCount = 0;
-
-cout << "Loading Dataset from" << filename << "..." ;
-cout << endl;
-
-cout << "This may take a moment for large dataset...";
-cout << endl;
-
-auto startTime = chrono::high_resolution_clock::now();
-
-while(getline(file , line))
+double getFeatureValue(LoanRecord& record , int featureIndex)
 {
+    switch(featureIndex){
 
-    lineCount++;
+        case 0: return record.age;
+        case 1: return record.income;
+        case 2: return record.loanAmount;
+        case 3: return record.creditScore;
+        case 4: return record.monthsEmployed;
+        case 5: return record.numCreditLines;
+        case 6: return record.interestRate;
+        case 7: return record.loanTerm;
+        case 8: return record.dtiRatio;
+        case 9: return record.education;
+        case 10: return record.employmentType;
+        case 11: return record.maritalStatus;
+        case 12: return record.hasMortgage;
+        case 13: return record.hasDependents;
+        case 14: return record.loanPurpose;
+        case 15: return record.hasCoSigner;
 
-    //Skip First Line 
-    if(isFirstLine){
-        
-        isFirstLine = false;
-        continue;
+        default: return 0.0;
+
     }
-     
-    //Skip Empty Line;
+}
 
-    if(line.empty()){
-        continue;
+//Function to calculate gini impurity
+double calculateGini(vector<LoanRecord>& records){
+
+    if (records.empty()) return 0.0;
+    
+    int countLowRisk = 0;
+    int countHighRisk = 0;
+
+    for(auto& record:records){
+
+        if(record.defaultRisk == 0) countLowRisk++;
+        else countHighRisk++;
     }
 
-    vector<string> tokens = splitCSV(line);
+    double probLow = (double)countLowRisk / records.size();
+    double probHigh = (double)countHighRisk / records.size();
+    
+    return 1.0 - (probLow*probLow + probHigh*probHigh);
 
-    //Ensure We Have enough columns
-   if(tokens.size() < 18){
-    invalidCount++;
-    continue;
-   }
+}
 
-  LoanRecord record;
-  //Parse and Convert each field
+// get majority class in a set of records
 
-  record.age = safeStoi(tokens[1] , 30);
-  record.income = safeStod(tokens[2] , 50000.0);
-  record.loanAmount = safeStoi(tokens[3] ,10000 );
-  record.creditScore = safeStoi(tokens[4] , 650);
-  record.monthsEmployed = safeStoi(tokens[5], 12);
-  record.numCreditLines = safeStoi(tokens[6] , 2);
-  record.interestRate = safeStod(tokens[7] , 5.0 );
-  record.loanTerm = safeStoi(tokens[8], 36);
-  record.dtiRatio = safeStod(tokens[9], 0.3);
-  record.education = encodeEducation(tokens[10]);
-  record.employmentType = encodeEmploymentType(tokens[11]);
-  record.maritalStatus = encodeMaritalStatus(tokens[12]);
-  record.hasMortgage = encodeYesNo(tokens[13]);
-  record.hasDependents = encodeYesNo(tokens[14]);
-  record.loanPurpose = encodeLoanPurpose(tokens[15]);
-  record.hasCoSigner = encodeYesNo(tokens[16]);
+int getMajorityClass(vector<LoanRecord>& records){
 
-   //  Default (0 = Low Risk, 1 = High Risk)
-  record.defaultRisk = encodeYesNo(tokens[17]);
-   
-  //Validate input Data
+    if(records.empty()) return 0.0;
 
-  validateInputData(record);
+    int countLowRisk = 0;
+    int countHighRisk = 0;
+    
+    for (const auto& record : records) {
+        if (record.defaultRisk == 0) countLowRisk++;
+        else countHighRisk++;
+    }
+    
+    return (countHighRisk > countLowRisk) ? 1 : 0;
+}
 
-  dataset.push_back(record);
-  loadedCount++;
+struct SplitInfo
+{
+  int featureIndex;
+    double threshold;
+    double giniGain;
+    vector<LoanRecord> leftSplit;
+    vector<LoanRecord> rightSplit;   /* data */
+};
 
-  //Progress indicator for large file;
-
-   if (loadedCount % 50000 == 0) {
-            cout << "  Loaded " << loadedCount << " records..." << endl;
+SplitInfo findBestSplit(vector<LoanRecord>& records, vector<int>& availableFeatures) {
+    SplitInfo bestSplit;
+    bestSplit.giniGain = -1.0;
+    bestSplit.featureIndex = -1;
+    
+    double parentGini = calculateGini(records);
+    
+    // Try each available feature
+    for (int featureIndex : availableFeatures) {
+        // Collect all unique values for this feature
+        vector<double> values;
+        for ( auto& record : records) {
+            values.push_back(getFeatureValue(record, featureIndex));
         }
-
-
+        
+        sort(values.begin(), values.end());
+        values.erase(unique(values.begin(), values.end()), values.end());
+        
+        // For large datasets, sample thresholds to speed up training
+        int maxSamples = 20; // Try up to 20 thresholds per feature
+        int step = max(1, (int)values.size() / maxSamples);
+        
+        // Try splits at sampled points
+        for (size_t i = 0; i < values.size() - 1; i += step) {
+            double threshold = (values[i] + values[min(i + 1, values.size() - 1)]) / 2.0;
+            
+            vector<LoanRecord> leftSplit, rightSplit;
+            
+            for ( auto& record : records) {
+                if (getFeatureValue(record, featureIndex) <= threshold) {
+                    leftSplit.push_back(record);
+                } else {
+                    rightSplit.push_back(record);
+                }
+            }
+            
+            if (leftSplit.empty() || rightSplit.empty()) continue;
+            
+            // Calculate weighted Gini impurity
+            double leftGini = calculateGini(leftSplit);
+            double rightGini = calculateGini(rightSplit);
+            double weightedGini = (leftSplit.size() * leftGini + rightSplit.size() * rightGini) / records.size();
+            
+            double giniGain = parentGini - weightedGini;
+            
+            if (giniGain > bestSplit.giniGain) {
+                bestSplit.featureIndex = featureIndex;
+                bestSplit.threshold = threshold;
+                bestSplit.giniGain = giniGain;
+                bestSplit.leftSplit = leftSplit;
+                bestSplit.rightSplit = rightSplit;
+            }
+        }
+    }
+    
+    // Track feature usage for importance calculation
+    if (bestSplit.featureIndex >= 0) {
+        featureUsageCount[bestSplit.featureIndex]++;
+    }
+    
+    return bestSplit;
 }
 
-file.close();
-
-auto endtime = chrono::high_resolution_clock::now();
-auto duration = chrono::duration_cast<chrono::seconds>(endtime-startTime);
-
-//Short message for user
-
-    cout << "\nDataset loading completed!" << endl;
-    cout << "  Total lines processed: " << lineCount << endl;
-    cout << "  Valid records loaded: " << dataset.size() << endl;
-    cout << "  Invalid records skipped: " << invalidCount << endl;
-    cout << "  Loading time: " << duration.count() << " seconds" << endl;
- 
-
-//CAlculate statistics for numerical fellings;
-// calculateFeaturesStatistics();
-
-return dataset;
-
+// Recursively build decision tree
+int buildTreeRecursive(DecisionTree& tree, vector<LoanRecord>& records, 
+                       vector<int>& availableFeatures, int depth, int maxDepth, int minSamplesSplit) {
+    
+    DecisionNode node;
+    int currentIndex = tree.nodes.size();
+    tree.nodes.push_back(node); // Reserve space
+    
+    // Stopping criteria
+    if (records.empty() || depth >= maxDepth || records.size() < minSamplesSplit || 
+        calculateGini(records) < 0.01 || availableFeatures.empty()) {
+        tree.nodes[currentIndex].isLeaf = true;
+        tree.nodes[currentIndex].predictedClass = getMajorityClass(records);
+        return currentIndex;
+    }
+    
+    // Find best split
+    SplitInfo split = findBestSplit(records, availableFeatures);
+    
+    // If no good split found, make leaf node
+    if (split.giniGain <= 0.001) {
+        tree.nodes[currentIndex].isLeaf = true;
+        tree.nodes[currentIndex].predictedClass = getMajorityClass(records);
+        return currentIndex;
+    }
+    
+    // Create internal node
+    tree.nodes[currentIndex].isLeaf = false;
+    tree.nodes[currentIndex].featureIndex = split.featureIndex;
+    tree.nodes[currentIndex].threshold = split.threshold;
+    
+    // Recursively build left and right subtrees
+    int leftChildIndex = buildTreeRecursive(tree, split.leftSplit, availableFeatures, depth + 1, maxDepth, minSamplesSplit);
+    int rightChildIndex = buildTreeRecursive(tree, split.rightSplit, availableFeatures, depth + 1, maxDepth, minSamplesSplit);
+    
+    tree.nodes[currentIndex].leftChild = leftChildIndex;
+    tree.nodes[currentIndex].rightChild = rightChildIndex;
+    
+    return currentIndex;
 }
 
-//Function to calculate data Statistics will be implemented from here
+
+DecisionTree buildDecisionTree(const vector<LoanRecord>& dataset, int maxDepth, int numFeaturesPerTree, int minSamplesSplit) {
+    DecisionTree tree;
+    
+    // Bootstrap sampling: randomly sample with replacement
+    // For very large datasets, use a smaller bootstrap sample
+    int bootstrapSize = min((int)dataset.size(), 10000); // Cap at 10K per tree for efficiency
+    vector<LoanRecord> bootstrapSample;
+    
+    for (int i = 0; i < bootstrapSize; i++) {
+        int randomIndex = rand() % dataset.size();
+        bootstrapSample.push_back(dataset[randomIndex]);
+    }
+    
+    // Random feature selection: choose subset of features
+    vector<int> allFeatures;
+    for (int i = 0; i < NUM_FEATURES; i++) {
+        allFeatures.push_back(i);
+    }
+    
+    // Use modern shuffle instead of deprecated random_shuffle
+    random_device rd;
+    mt19937 g(rd());
+    shuffle(allFeatures.begin(), allFeatures.end(), g);
+    
+    vector<int> selectedFeatures;
+    for (int i = 0; i < numFeaturesPerTree && i < NUM_FEATURES; i++) {
+        selectedFeatures.push_back(allFeatures[i]);
+    }
+    
+    // Build the tree
+    tree.rootIndex = buildTreeRecursive(tree, bootstrapSample, selectedFeatures, 0, maxDepth, minSamplesSplit);
+    
+    return tree;
+}
 
 
-int main(){
-
-    //Initialize random  seed
-
+int main() {
+    
+    // Initialize random seed
     srand(time(0));
-      
+    
     cout << "=========================================" << endl;
     cout << "  LOAN RISK PREDICTION SYSTEM" << endl;
     cout << "  Using Random Forest Algorithm" << endl;
-    cout << "  Advanced Analytics Edition" << endl;
     cout << "=========================================" << endl;
     
-    //Step-01: Data Preprocessing
-
+    // Step 1: Load and preprocess dataset
     string datasetFile = "data.csv";
-    
     vector<LoanRecord> dataset = loadAndPreprocessDataset(datasetFile);
-
-    if(dataset.empty())
-    {
-       cerr << "\nError: No data loaded. Please ensure " << datasetFile << " exists." << endl;
+    
+    if (dataset.empty()) {
+        cerr << "\nError: No data loaded. Please ensure " << datasetFile << " exists." << endl;
         return 1;
     }
 
-    cout << "Data preprocessing completed Successfully"<<endl;
-    cout << "Data is ready for model training" << endl;
+     int maxDepth = 5;
+    int minSamplesSplit = 10;
+    int numFeatures = NUM_FEATURES;
+
+    DecisionTree tree = buildDecisionTree(
+        dataset,
+        maxDepth,
+        numFeatures,
+        minSamplesSplit
+    );
+
+    cout << "Decision Tree successfully built!" << endl;
+    cout << "Total nodes in tree: " << tree.nodes.size() << endl;
+    cout << "Root node index: " << tree.rootIndex << endl;
+    
+   
+    return 0;
 }
