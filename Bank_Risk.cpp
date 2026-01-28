@@ -56,9 +56,9 @@ struct RandomForest {
     int numTrees;
 };
 
-// ============================================================================
+
 // GLOBAL STATISTICS FOR FEATURE SCALING
-// ============================================================================
+
 
 struct FeatureStats {
     double mean;
@@ -531,7 +531,7 @@ int buildTreeRecursive(DecisionTree& tree, vector<LoanRecord>& records,
 }
 
 
-DecisionTree buildDecisionTree(const vector<LoanRecord>& dataset, int maxDepth, int numFeaturesPerTree, int minSamplesSplit) {
+DecisionTree buildDecisionTree( vector<LoanRecord>& dataset, int maxDepth, int numFeaturesPerTree, int minSamplesSplit) {
     DecisionTree tree;
     
     // Bootstrap sampling: randomly sample with replacement
@@ -567,6 +567,34 @@ DecisionTree buildDecisionTree(const vector<LoanRecord>& dataset, int maxDepth, 
 }
 
 
+RandomForest buildRandomForest( vector<LoanRecord>& dataset,int numTrees,int maxDepth,int numFeaturesPerTree,int minSamplesSplit) {
+    RandomForest forest;
+    forest.numTrees = numTrees;
+
+    int progressStep = max(1, numTrees / 10);  // 10%, 20%, ...
+     
+    cout << "\nRandom Forest building...."<<endl;
+    for (int i = 0; i < numTrees; i++) {
+        DecisionTree tree = buildDecisionTree(
+            dataset,
+            maxDepth,
+            numFeaturesPerTree,
+            minSamplesSplit
+        );
+
+        forest.trees.push_back(tree);
+
+        // output
+        if ((i + 1) % progressStep == 0 || i + 1 == numTrees) {
+            cout << (i + 1) << "/" << numTrees << " trees built" << endl;
+        }
+    }
+
+    return forest;
+}
+
+
+
 int main() {
     
     // Initialize random seed
@@ -586,21 +614,24 @@ int main() {
         return 1;
     }
 
-     int maxDepth = 5;
-    int minSamplesSplit = 10;
-    int numFeatures = NUM_FEATURES;
+    int numTrees = 100;
+int maxDepth = 5;
+int minSamplesSplit = 10;
+int numFeaturesPerTree = sqrt(NUM_FEATURES);
 
-    DecisionTree tree = buildDecisionTree(
-        dataset,
-        maxDepth,
-        numFeatures,
-        minSamplesSplit
-    );
+RandomForest forest = buildRandomForest(
+    dataset,
+    numTrees,
+    maxDepth,
+    numFeaturesPerTree,
+    minSamplesSplit
+);
 
-    cout << "Decision Tree successfully built!" << endl;
-    cout << "Total nodes in tree: " << tree.nodes.size() << endl;
-    cout << "Root node index: " << tree.rootIndex << endl;
-    
+cout << "\n=========================================" << endl;
+cout << " Random Forest Building Completed" << endl;
+cout << " Total trees built: " << forest.numTrees << endl;
+cout << "=========================================" << endl;
+
    
     return 0;
 }
