@@ -566,7 +566,6 @@ DecisionTree buildDecisionTree( vector<LoanRecord>& dataset, int maxDepth, int n
     return tree;
 }
 
-
 RandomForest buildRandomForest( vector<LoanRecord>& dataset,int numTrees,int maxDepth,int numFeaturesPerTree,int minSamplesSplit) {
     RandomForest forest;
     forest.numTrees = numTrees;
@@ -593,6 +592,54 @@ RandomForest buildRandomForest( vector<LoanRecord>& dataset,int numTrees,int max
     return forest;
 }
 
+RandomForest trainRandomForest(vector<LoanRecord>& dataset , int numTrees , int maxDepth , int minSamplesSplit){
+
+    cout << "\n=== Training Random Forest ====" << endl;
+    cout << "Number of Tress: " <<numTrees << endl;
+    cout << "Max Depth Per Tree: " << maxDepth << endl;
+    cout << "Min samples to split: " << minSamplesSplit << endl;
+    cout << "Training dataset size: " << dataset.size() << endl;
+
+    int numFeaturesPerTree = sqrt(NUM_FEATURES);
+    cout << "Features per tree split: " << numFeaturesPerTree << endl;
+
+    // Class Distribution
+
+    int low = 0 , high = 0;
+
+    for(auto& r:dataset){
+        if(r.defaultRisk == 0) low++;
+        else high++;
+    }
+    
+    cout << "Class Distribution:" << endl;
+    cout << "Low risk: " << low << endl;
+    cout << "High risk: " << high << endl;
+
+    //Start time counting
+
+    auto start = chrono::high_resolution_clock::now();
+
+    RandomForest forest = buildRandomForest(
+        dataset ,
+         numTrees , 
+         maxDepth ,
+          numFeaturesPerTree , 
+          minSamplesSplit
+        );
+
+        auto end = chrono:: high_resolution_clock::now();
+        auto duration = chrono::duration_cast<chrono::seconds>(end - start);
+        
+         cout << "Random Forest training completed!" << endl;
+         cout << "Training time: " << duration.count() << " seconds" << endl;
+
+         return forest;
+
+}
+
+
+
 
 
 int main() {
@@ -615,20 +662,19 @@ int main() {
     }
 
     int numTrees = 100;
-int maxDepth = 5;
+int maxDepth = 15;
 int minSamplesSplit = 10;
 int numFeaturesPerTree = sqrt(NUM_FEATURES);
 
-RandomForest forest = buildRandomForest(
+RandomForest forest = trainRandomForest(
     dataset,
     numTrees,
     maxDepth,
-    numFeaturesPerTree,
     minSamplesSplit
 );
 
 cout << "\n=========================================" << endl;
-cout << " Random Forest Building Completed" << endl;
+cout << " Random Forest training Completed" << endl;
 cout << " Total trees built: " << forest.numTrees << endl;
 cout << "=========================================" << endl;
 
