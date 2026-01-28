@@ -6,7 +6,7 @@ This project is a high-performance C++ implementation of a **Random Forest algor
 - [x] **Phase 1: Foundation** - Core data structures and applicant models defined.
 - [x] **Phase 2: Data Processing** - CSV loading engine and statistical analysis.
 - [x] **Phase 3: Data Validation** - CSV loading engine and Data Validation.
-- [ ] **Phase 4: ML Core** - Gini impurity calculations and Decision Tree building.
+- [x] **Phase 4: ML Core** - Gini impurity calculations and Decision Tree building.
 - [ ] **Phase 5: Random Forest** - Forest training and majority voting logic.
 - [ ] **Phase 6: Analysis & UI** - Risk factor reporting and user interface(currently no user interface implemented).
 
