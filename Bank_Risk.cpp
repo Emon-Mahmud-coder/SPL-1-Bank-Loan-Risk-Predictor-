@@ -638,6 +638,98 @@ RandomForest trainRandomForest(vector<LoanRecord>& dataset , int numTrees , int 
 
 }
 
+LoanRecord getUserInput(){
+
+    LoanRecord record;
+    cout << "\n=== Enter Loan Applicant Information ===" << endl;
+    
+    cout << "Age: ";
+    cin >> record.age;
+    
+    cout << "Annual Income: ";
+    cin >> record.income;
+
+    cout << "Credit Score: ";
+    cin >> record.creditScore;
+    
+    cout << "Months Employed: ";
+    cin >> record.monthsEmployed;
+
+     cout << "Number of Credit Lines: ";
+    cin >> record.numCreditLines;
+    
+    cout << "Interest Rate (%): ";
+    cin >> record.interestRate;
+
+    cout << "Loan Term (months): ";
+    cin >> record.loanTerm;
+    
+    cout << "Debt-to-Income Ratio: ";
+    cin >> record.dtiRatio;
+
+    cout << "\nEducation (0=High School, 1=Bachelor's, 2=Master's, 3=PhD): ";
+    cin >> record.education;
+    
+    cout << "Employment Type (0=Unemployed, 1=Self-employed, 2=Full-time, 3=Part-time): ";
+    cin >> record.employmentType;
+    
+    cout << "Marital Status (0=Single, 1=Married, 2=Divorced): ";
+    cin >> record.maritalStatus;
+    
+    cout << "Has Mortgage? (0=No, 1=Yes): ";
+    cin >> record.hasMortgage;
+
+     cout << "Has Dependents? (0=No, 1=Yes): ";
+    cin >> record.hasDependents;
+    
+    cout << "Loan Purpose (0=Auto, 1=Business, 2=Education, 3=Home, 4=Other): ";
+    cin >> record.loanPurpose;
+
+    cout << "Has Co-Signer? (0=No, 1=Yes): ";
+    cin >> record.hasCoSigner;
+    
+    // Validate input
+    validateInputData(record);
+    
+    // We don't ask for the default risk (target) - we're predicting it!
+    record.defaultRisk = -1; // Unknown
+    
+    return record;
+
+}
+
+
+void displayApplicantSummary(const LoanRecord& record){
+
+cout << "\n===Applicant Profile summary ===" << endl;
+cout <<"Personal Information:" << endl;
+
+ cout << "  Age: " << record.age << " years" << endl;
+ cout << "  Education: " << getEducationName(record.education) << endl;
+ cout << "  Marital Status: " << getMaritalStatusName(record.maritalStatus) << endl;
+ cout << "  Has Dependents: " << (record.hasDependents ? "Yes" : "No") << endl;
+    
+ cout << "\n Financial Infromation:" << endl;
+
+ cout << "  Annual Income: $" << fixed << setprecision(0) << record.income << endl;
+ cout << "  Credit Score: " << record.creditScore << endl;
+ cout << "  DTI Ratio: " << fixed << setprecision(2) << (record.dtiRatio * 100) << "%" << endl;
+ cout << "  Credit Lines: " << record.numCreditLines << endl;
+
+  cout << "\nEmployment:" << endl;
+  cout << "  Type: " << getEmploymentName(record.employmentType) << endl;
+  cout << "  Duration: " << record.monthsEmployed << " months" << endl;
+  
+  cout << "\nLoan Details:" << endl;
+  cout << "  Amount: $" << fixed << setprecision(0) << record.loanAmount << endl;
+  cout << "  Purpose: " << getLoanPurposeName(record.loanPurpose) << endl;
+  cout << "  Term: " << record.loanTerm << " months" << endl;
+  cout << "  Interest Rate: " << fixed << setprecision(2) << record.interestRate << "%" << endl;
+  cout << "  Has Co-Signer: " << (record.hasCoSigner ? "Yes" : "No") << endl;
+  cout << "  Has Mortgage: " << (record.hasMortgage ? "Yes" : "No") << endl;
+
+}
+
 
 
 
