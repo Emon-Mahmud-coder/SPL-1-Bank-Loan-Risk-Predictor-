@@ -730,6 +730,65 @@ cout <<"Personal Information:" << endl;
 
 }
 
+//Prediction
+// Predict class for a single record using one decision tree
+
+int predictWithTree(const DecisionTree& tree ,  LoanRecord& record){
+
+ int currentIndex = tree.rootIndex;
+
+ while (true)
+ {
+    const DecisionNode& node = tree.nodes[currentIndex];
+
+    if(node.isLeaf)
+    {
+        return node.predictedClass;
+    }
+
+    double featureValue = getFeatureValue(record , node.featureIndex);
+    
+    if(featureValue <= node.threshold){
+        currentIndex = node.leftChild;
+    }else{
+        currentIndex = node.rightChild;
+    }
+
+ }
+ 
+}
+
+
+struct PredictionResult {
+    int predictedClass;
+    int votesLowRisk;
+    int votesHighRisk;
+    double confidence;
+};
+
+PredictionResult predictWithRandomForest(const RandomForest& forest , LoanRecord& record){
+PredictionResult result;
+
+result.votesLowRisk = 0;
+result.votesHighRisk = 0;
+
+for(const auto & tree:forest.trees){
+
+    int prediction = predictWithTree(tree , record);
+    if(prediction == 0)result.votesLowRisk++;
+    else result.votesHighRisk++;
+
+}
+
+result.predictedClass = (result.votesHighRisk > result.votesLowRisk)? 1:0;
+result.confidence = (double)max(result.votesLowRisk, result.votesHighRisk) / forest.numTrees * 100.0;
+    
+return result;
+
+}
+
+
+
 
 
 
