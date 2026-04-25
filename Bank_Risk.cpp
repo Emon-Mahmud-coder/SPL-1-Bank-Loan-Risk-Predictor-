@@ -57,7 +57,7 @@ struct RandomForest {
 };
 
 
-// GLOBAL STATISTICS FOR FEATURE SCALING
+// Global statistics for feature importance
 
 
 struct FeatureStats {
@@ -65,6 +65,23 @@ struct FeatureStats {
     double stddev;
     double min;
     double max;
+};
+
+struct RiskAnalysis{
+int predictedClass;
+    double confidence;
+    vector<string> riskFactors;
+    vector<string> positiveFactors;
+    string riskLevel;
+    vector<string> recommendations;
+};
+
+struct ModelMetrics {
+    double accuracy;
+    double precision;
+    double recall;
+    double f1Score;
+    int truePositive, trueNegative, falsePositive, falseNegative;
 };
 
 map<int, FeatureStats> featureStats;
@@ -255,9 +272,9 @@ void validateInputData(LoanRecord& record) {
     if (record.monthsEmployed > 600) record.monthsEmployed = 600;
 }
 
-// ============================================================================
-// DATA LOADING AND PREPROCESSING
-// ============================================================================
+
+// Data loading and preprocessing
+
 
 vector<LoanRecord> loadAndPreprocessDataset(const string& filename) {
     vector<LoanRecord> dataset;
@@ -275,7 +292,7 @@ vector<LoanRecord> loadAndPreprocessDataset(const string& filename) {
     int invalidCount = 0;
     
     cout << "Loading dataset from " << filename << "..." << endl;
-    cout << "This may take a moment for large datasets..." << endl;
+    cout << "This may take a moment..." << endl;
     
     auto startTime = chrono::high_resolution_clock::now();
     
@@ -531,41 +548,47 @@ int buildTreeRecursive(DecisionTree& tree, vector<LoanRecord>& records,
 }
 
 
-DecisionTree buildDecisionTree( vector<LoanRecord>& dataset, int maxDepth, int numFeaturesPerTree, int minSamplesSplit) {
+DecisionTree buildDecisionTree(vector<LoanRecord>& dataset, int maxDepth, int numFeaturesPerTree, int minSamplesSplit) {
     DecisionTree tree;
-    
-    // Bootstrap sampling: randomly sample with replacement
-    // For very large datasets, use a smaller bootstrap sample
-    int bootstrapSize = min((int)dataset.size(), 10000); // Cap at 10K per tree for efficiency
-    vector<LoanRecord> bootstrapSample;
-    
-    for (int i = 0; i < bootstrapSize; i++) {
-        int randomIndex = rand() % dataset.size();
-        bootstrapSample.push_back(dataset[randomIndex]);
+
+ 
+    // Separate records by class
+    vector<LoanRecord> lowRiskRecords, highRiskRecords;
+    for (auto& r : dataset) {
+        if (r.defaultRisk == 0) lowRiskRecords.push_back(r);
+        else highRiskRecords.push_back(r);
     }
-    
+
+    // Sample equally from both classes (50/50 balance per tree)
+    int halfSize = min(5000, (int)min(lowRiskRecords.size(), highRiskRecords.size()));
+    vector<LoanRecord> bootstrapSample;
+
+    for (int i = 0; i < halfSize; i++) {
+        bootstrapSample.push_back(lowRiskRecords[rand() % lowRiskRecords.size()]);
+        bootstrapSample.push_back(highRiskRecords[rand() % highRiskRecords.size()]);
+    }
+
     // Random feature selection: choose subset of features
     vector<int> allFeatures;
     for (int i = 0; i < NUM_FEATURES; i++) {
         allFeatures.push_back(i);
     }
-    
-    // Use modern shuffle instead of deprecated random_shuffle
+
+    // Shuffle features
     random_device rd;
     mt19937 g(rd());
     shuffle(allFeatures.begin(), allFeatures.end(), g);
-    
+
     vector<int> selectedFeatures;
     for (int i = 0; i < numFeaturesPerTree && i < NUM_FEATURES; i++) {
         selectedFeatures.push_back(allFeatures[i]);
     }
-    
+
     // Build the tree
     tree.rootIndex = buildTreeRecursive(tree, bootstrapSample, selectedFeatures, 0, maxDepth, minSamplesSplit);
-    
+
     return tree;
 }
-
 RandomForest buildRandomForest( vector<LoanRecord>& dataset,int numTrees,int maxDepth,int numFeaturesPerTree,int minSamplesSplit) {
     RandomForest forest;
     forest.numTrees = numTrees;
@@ -638,6 +661,36 @@ RandomForest trainRandomForest(vector<LoanRecord>& dataset , int numTrees , int 
 
 }
 
+
+
+
+
+void displayRiskAnalysis(RiskAnalysis& analysis){
+ 
+    cout << "\n=== Detailed Risk Analysis ===" << endl;
+    cout << "Risk Level: " << analysis.riskLevel << endl;
+    cout << "Confidence: " << fixed << setprecision(1) << analysis.confidence << "%" << endl;
+    
+    if (!analysis.riskFactors.empty()) {
+        cout << "\nRisk Factors Identified:" << endl;
+        for (const auto& factor : analysis.riskFactors) {
+            cout << "  ⚠ " << factor << endl;
+        }
+    }
+
+   if (!analysis.recommendations.empty()) {
+        cout << "\n" << string(60, '=') << endl;
+        for (const auto& rec : analysis.recommendations) {
+            cout << rec << endl;
+        }
+    } 
+
+
+
+
+}
+
+
 LoanRecord getUserInput(){
 
     LoanRecord record;
@@ -648,6 +701,9 @@ LoanRecord getUserInput(){
     
     cout << "Annual Income: ";
     cin >> record.income;
+
+    cout << "Loan Amount: " ;
+    cin >> record.loanAmount; 
 
     cout << "Credit Score: ";
     cin >> record.creditScore;
@@ -755,10 +811,11 @@ int predictWithTree(const DecisionTree& tree ,  LoanRecord& record){
     }
 
  }
+ return 0; // default, should never reach here
  
 }
 
-
+// Predict class using Random Forest (majority voting)
 struct PredictionResult {
     int predictedClass;
     int votesLowRisk;
@@ -787,11 +844,249 @@ return result;
 
 }
 
+ModelMetrics evaluateModel(const RandomForest& forest, vector<LoanRecord>& testSet) {
+    ModelMetrics m = {0};
+    for (auto& record : testSet) {
+        PredictionResult pred = predictWithRandomForest(forest, const_cast<LoanRecord&>(record));
+        int actual = record.defaultRisk;
+        int predicted = pred.predictedClass;
+        if (actual == 1 && predicted == 1) m.truePositive++;
+        else if (actual == 0 && predicted == 0) m.trueNegative++;
+        else if (actual == 0 && predicted == 1) m.falsePositive++;
+        else if (actual == 1 && predicted == 0) m.falseNegative++;
+    }
+    m.accuracy  = 100.0 * (m.truePositive + m.trueNegative) / testSet.size();
+    m.precision = (m.truePositive + m.falsePositive) > 0 ?
+                  100.0 * m.truePositive / (m.truePositive + m.falsePositive) : 0;
+    m.recall    = (m.truePositive + m.falseNegative) > 0 ?
+                  100.0 * m.truePositive / (m.truePositive + m.falseNegative) : 0;
+    m.f1Score   = (m.precision + m.recall) > 0 ?
+                  2 * m.precision * m.recall / (m.precision + m.recall) : 0;
+    return m;
+}
+
+void displayMetrics(const ModelMetrics& m) {
+    cout << "\n========= MODEL EVALUATION =========" << endl;
+    cout << "Confusion Matrix:" << endl;
+    cout << "                  Predicted" << endl;
+    cout << "                  Low    High" << endl;
+    cout << "Actual  Low    [  " << m.trueNegative << "    " << m.falsePositive << "  ]" << endl;
+    cout << "        High   [  " << m.falseNegative << "    " << m.truePositive << "  ]" << endl;
+    cout << "\nAccuracy:  " << fixed << setprecision(2) << m.accuracy << "%" << endl;
+    cout << "Precision: " << m.precision << "%" << endl;
+    cout << "Recall:    " << m.recall << "%" << endl;
+    cout << "F1 Score:  " << m.f1Score << "%" << endl;
+    cout << "=====================================" << endl;
+}
+
+vector<string>generateRecommendations(LoanRecord& record , int prediciton){
+
+vector<string> recommendations;
+if(prediciton == 1){
+    recommendations.push_back("RECOMMENDATION: Loan application should be carefully reviewed");
+
+        if (record.creditScore < 650) {
+            recommendations.push_back("- Consider requiring a higher down payment");
+            recommendations.push_back("- Recommend credit counseling before approval");
+        }
+          if (record.dtiRatio > 0.45) {
+            recommendations.push_back("- Debt consolidation should be considered");
+            recommendations.push_back("- Verify all income sources thoroughly");
+        }
+        if (record.hasCoSigner == 0) {
+            recommendations.push_back("- Strongly recommend obtaining a co-signer");
+        }
+         if (record.employmentType != 2) {
+            recommendations.push_back("- Request additional proof of income stability");
+        }
+
+        recommendations.push_back("- Consider increasing interest rate to offset risk");
+        recommendations.push_back("- Implement closer monitoring during loan term");
+
+
+}else { // Low Risk
+        recommendations.push_back("RECOMMENDATION: Loan application shows strong indicators");
+        
+        if (record.creditScore >= 750 && record.dtiRatio < 0.35) {
+            recommendations.push_back("- Eligible for preferred interest rates");
+            recommendations.push_back("- Fast-track approval recommended");
+        }
+        
+        if (record.hasCoSigner == 1) {
+            recommendations.push_back("- Co-signer may not be necessary given strong profile");
+        }
+        
+        recommendations.push_back("- Standard monitoring procedures sufficient");
+        recommendations.push_back("- Consider for future credit limit increases");
+    }
+
+    return recommendations;
+
+}
+
+//Risk Analysis
+
+RiskAnalysis analyzeRisk(LoanRecord& record , int prediction , double confidence){
+
+RiskAnalysis analysis;
+analysis.riskLevel = prediction == 1 ? "VERY HIGH RISK" : "VERY LOW RISK";
+analysis.confidence = confidence;
+
+//Determine Risk level based on confidence
+
+if(confidence >= 90){
+     analysis.riskLevel = prediction == 1 ? "VERY HIGH RISK" : "VERY LOW RISK";
+}else if(confidence >=75){
+      analysis.riskLevel = prediction == 1 ? "HIGH RISK" : "LOW RISK";
+}else if(confidence >=60){
+    analysis.riskLevel = prediction == 1 ? "MODERATE-HIGH RISK" : "MODERATE-LOW RISK";
+
+} else {
+        analysis.riskLevel = "UNCERTAIN - MANUAL REVIEW NEEDED";
+    }
+//Identify risk factors
+
+if(record.creditScore < 600)
+{
+    analysis.riskFactors.push_back("Poor credit score (" + to_string(record.creditScore) + ")");
+}
+
+ if (record.dtiRatio > 0.50) {
+        analysis.riskFactors.push_back("High debt-to-income ratio (" + to_string((int)(record.dtiRatio * 100)) + "%)");
+ }
+ if (record.employmentType == 0) {
+        analysis.riskFactors.push_back("Currently unemployed");
+ }
+
+ if (record.interestRate > 10.0) {
+        analysis.riskFactors.push_back("High interest rate (" + to_string(record.interestRate) + "%)");
+ }
+ if (record.monthsEmployed < 12) {
+        analysis.riskFactors.push_back("Short employment history (" + to_string(record.monthsEmployed) + " months)");
+    }
+    if (record.hasCoSigner == 0 && record.creditScore < 650) {
+        analysis.riskFactors.push_back("No co-signer with low credit");
+    }
+
+// Identify positive factors
+if (record.creditScore >= 750) {
+        analysis.positiveFactors.push_back("Excellent credit score (" + to_string(record.creditScore) + ")");
+}
+if (record.dtiRatio < 0.35) {
+        analysis.positiveFactors.push_back("Low debt-to-income ratio (" + to_string((int)(record.dtiRatio * 100)) + "%)");
+}
+if (record.employmentType == 2 && record.monthsEmployed >= 36) {
+        analysis.positiveFactors.push_back("Stable full-time employment");
+}
+if (record.hasCoSigner == 1) {
+        analysis.positiveFactors.push_back("Has co-signer");
+    }
+if (record.education >= 2) {
+        analysis.positiveFactors.push_back("Advanced degree (" + getEducationName(record.education) + ")");
+}
+
+if (record.income >= 80000) {
+        analysis.positiveFactors.push_back("High income ($" + to_string((int)record.income) + ")");
+}
+
+//Generate Recommendetaion
+analysis.recommendations = generateRecommendations(record , prediction);
+
+
+return analysis;
+
+}
+
+void displayDetailedStatistics(const vector<LoanRecord>& dataset) {
+    cout << "\n=== Detailed Dataset Statistics ===" << endl;
+    
+    // Class distribution
+    int countLow = 0, countHigh = 0;
+    for (const auto& record : dataset) {
+        if (record.defaultRisk == 0) countLow++;
+        else countHigh++;
+    }
+    
+    cout << "\nClass Distribution:" << endl;
+    cout << "  Low Risk:  " << countLow << " (" 
+         << fixed << setprecision(1) << (100.0 * countLow / dataset.size()) << "%)" << endl;
+    cout << "  High Risk: " << countHigh << " (" 
+         << (100.0 * countHigh / dataset.size()) << "%)" << endl;
+    
+    // Feature statistics by class
+    double avgCreditLow = 0, avgCreditHigh = 0;
+    double avgDtiLow = 0, avgDtiHigh = 0;
+    double avgIncomeLow = 0, avgIncomeHigh = 0;
+    double avgInterestLow = 0, avgInterestHigh = 0;
+    
+    for (const auto& record : dataset) {
+        if (record.defaultRisk == 0) {
+            avgCreditLow += record.creditScore;
+            avgDtiLow += record.dtiRatio;
+            avgIncomeLow += record.income;
+            avgInterestLow += record.interestRate;
+        } else {
+            avgCreditHigh += record.creditScore;
+            avgDtiHigh += record.dtiRatio;
+            avgIncomeHigh += record.income;
+            avgInterestHigh += record.interestRate;
+        }
+    }
+    
+    if (countLow > 0) {
+        avgCreditLow /= countLow;
+        avgDtiLow /= countLow;
+        avgIncomeLow /= countLow;
+        avgInterestLow /= countLow;
+    }
+    
+    if (countHigh > 0) {
+        avgCreditHigh /= countHigh;
+        avgDtiHigh /= countHigh;
+        avgIncomeHigh /= countHigh;
+        avgInterestHigh /= countHigh;
+    }
+    
+    cout << "\nKey Metrics by Risk Level:" << endl;
+    cout << "  Credit Score    - Low Risk: " << fixed << setprecision(0) << avgCreditLow 
+         << ", High Risk: " << avgCreditHigh << endl;
+    cout << "  DTI Ratio       - Low Risk: " << fixed << setprecision(3) << avgDtiLow 
+         << ", High Risk: " << avgDtiHigh << endl;
+    cout << "  Income          - Low Risk: $" << fixed << setprecision(0) << avgIncomeLow 
+         << ", High Risk: $" << avgIncomeHigh << endl;
+    cout << "  Interest Rate   - Low Risk: " << fixed << setprecision(2) << avgInterestLow 
+         << "%, High Risk: " << avgInterestHigh << "%" << endl;
+    
+    // Employment distribution
+    map<int, int> employmentDist;
+    for (const auto& record : dataset) {
+        employmentDist[record.employmentType]++;
+    }
+    
+    cout << "\nEmployment Type Distribution:" << endl;
+    for (const auto& pair : employmentDist) {
+        cout << "  " << getEmploymentName(pair.first) << ": " 
+             << pair.second << " (" << fixed << setprecision(1) 
+             << (100.0 * pair.second / dataset.size()) << "%)" << endl;
+    }
+    
+    // Loan purpose distribution
+    map<int, int> purposeDist;
+    for (const auto& record : dataset) {
+        purposeDist[record.loanPurpose]++;
+    }
+    
+    cout << "\nLoan Purpose Distribution:" << endl;
+    for (const auto& pair : purposeDist) {
+        cout << "  " << getLoanPurposeName(pair.first) << ": " 
+             << pair.second << " (" << fixed << setprecision(1) 
+             << (100.0 * pair.second / dataset.size()) << "%)" << endl;
+    }
+}
 
 
 
-
-
+//Main Program
 
 int main() {
     
@@ -811,14 +1106,21 @@ int main() {
         cerr << "\nError: No data loaded. Please ensure " << datasetFile << " exists." << endl;
         return 1;
     }
+     //Step 1.a: Display detailed statistics about the dataset
+    displayDetailedStatistics(dataset);
 
-    int numTrees = 100;
+    random_shuffle(dataset.begin(), dataset.end());
+    int trainSize = dataset.size() * 0.8;
+    vector<LoanRecord> trainSet(dataset.begin(), dataset.begin() + trainSize);
+    vector<LoanRecord> testSet(dataset.begin() + trainSize, dataset.end());
+
+int numTrees = 100;
 int maxDepth = 15;
 int minSamplesSplit = 10;
 int numFeaturesPerTree = sqrt(NUM_FEATURES);
 
 RandomForest forest = trainRandomForest(
-    dataset,
+    trainSet,
     numTrees,
     maxDepth,
     minSamplesSplit
@@ -828,6 +1130,68 @@ cout << "\n=========================================" << endl;
 cout << " Random Forest training Completed" << endl;
 cout << " Total trees built: " << forest.numTrees << endl;
 cout << "=========================================" << endl;
+
+ModelMetrics metrics = evaluateModel(forest, testSet);
+displayMetrics(metrics);
+
+
+//Get user input and make prediction
+
+char continueInput = 'y';
+
+while (continueInput == 'y' || continueInput == 'Y')
+{
+    LoanRecord applicant = getUserInput();
+    displayApplicantSummary(applicant);
+    cout << "\n===Making Prediction===" <<endl;
+    cout << "consulting " << forest.numTrees << " decision trees...." << endl;
+    
+    PredictionResult prediction = predictWithRandomForest(forest , applicant);
+
+     cout << "\n=========================================" << endl;
+     cout << "Prediction Results:" << endl;
+     cout << "=========================================" << endl;
+
+     cout << "Voting Results:" << endl;
+     cout << "  Low Risk votes:  " << prediction.votesLowRisk << " / " << forest.numTrees << endl;
+     cout << "  High Risk votes: " << prediction.votesHighRisk << " / " << forest.numTrees << endl;
+     cout << "  Confidence: " << fixed << setprecision(1) << prediction.confidence << "%" << endl;
+     cout << endl;
+
+     if(prediction.predictedClass == 0){
+         cout << "✓ LOW RISK - Loan application is likely to be APPROVED" << endl;
+
+         if(prediction.confidence < 60){
+              cout << "  Note: Moderate confidence. Review carefully." << endl;
+         }else if(prediction.confidence > 80){
+             cout << "  Strong confidence in prediction." << endl;
+         }    
+
+     }else{
+         cout << "✗ HIGH RISK - Loan application may be REJECTED" << endl;
+         if (prediction.confidence < 60) {
+                cout << "  Note: Moderate confidence. Additional review recommended." << endl;
+            }else if(prediction.confidence >=80){
+                 cout << "  Strong confidence in prediction." << endl;
+            }
+     }
+
+     cout << "=========================================" << endl;
+
+     //Perform detailed risk analysis
+     RiskAnalysis riskAnalysis = analyzeRisk(applicant , prediction.predictedClass , prediction.confidence);
+     displayRiskAnalysis(riskAnalysis);
+
+     cout << "\nDo you want to predict for another applicant? (y/n): ";
+     cin >> continueInput;
+     
+     
+}
+
+    cout << "\n=========================================" << endl;
+    cout << "Thank you for using the Loan Risk Prediction System!" << endl;
+    cout << "Total predictions made: " << (continueInput == 'n' || continueInput == 'N' ? "Session complete" : "") << endl;
+    cout << "=========================================" << endl;
 
    
     return 0;
